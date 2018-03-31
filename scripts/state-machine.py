@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 import smach
+import smach_ros
 import rospy
+import motor_commands
+import time
+import robot_actions.msg
 
 
 # adding states to a state machine
@@ -24,33 +28,6 @@ class BotSetup(smach.State):
             return 'fail'
 
 
-class GotoMiningLocation(smach.State):
-    def __init__(self):
-        # state initialization
-        smach.State.__init__(self,
-                             outcomes=['success', 'fail']
-                             )
-
-    def execute(self, userdata):
-        # state execution
-        rospy.loginfo("Moving to mine...")
-        rospy.loginfo("X location: ")
-        rospy.loginfo("Y location: ")
-        return 'success'
-
-
-class GotoDumpingLocation(smach.State):
-    def __init__(self):
-        smach.State.__init__(self,
-                             outcomes=['success', 'fail'])
-
-    def execute(self, userdata):
-        rospy.loginfo('Going to dump...')
-        rospy.loginfo("X location: ")
-        rospy.loginfo("Y location: ")
-        return 'success'
-
-
 class Mine(smach.State):
     def __init__(self):
         smach.State.__init__(self,
@@ -63,6 +40,7 @@ class Mine(smach.State):
         rospy.loginfo("Depth: ")
         rospy.loginfo("Tool RPM: ")
         rospy.loginfo("Elapsed time: ")
+        time.sleep(1)
         return 'success'
 
 
@@ -73,6 +51,7 @@ class Dump(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Dumping...')
+        time.sleep(1)
         return 'success'
 
 
@@ -113,31 +92,51 @@ def main():
     # creating a state
     sm = smach.StateMachine(outcomes=['sm_success', 'sm_fail'])
     with sm:
+
+        # define where we want to mine
+        mining_goal = robot_actions.msg.move_baseGoal()
+        mining_goal.location.y = 10
+        mining_goal.location.x = 0
+
+        # define where we want to mine
+        dumping_goal = robot_actions.msg.move_baseGoal()
+        mining_goal.location.y = 0
+        mining_goal.location.x = 0
+
         # add the state to the state machine sm
         # first arguement is the label, FOO
         # second argument is the state, "Foo" as defined above
         # transistions states the possible outcomes
         # if outcome is outcome1, we transistion to state BAR.
         # if outcome is outcome2, the machine will exit with 'outcome4'
+
         smach.StateMachine.add('SETUP',
                                BotSetup(),
                                transitions={
                                    'success': 'IDLE',
                                    'fail': 'sm_fail'
                                })
-        
+
+        # call move_base action!
         smach.StateMachine.add('GOTO_MINE_LOCATION',
-                               GotoMiningLocation(),
+                               smach_ros.SimpleActionState('move_base',
+                                                           robot_actions.msg.move_baseAction,
+                                                           goal=mining_goal),
                                transitions={
-                                   'success': 'MINE',
-                                   'fail': 'SELF_LOC'
+                                   'succeeded': 'MINE',
+                                   'aborted': 'SELF_LOC',
+                                   'preempted': 'SELF_LOC'
                                })
 
+        # call move_base action!
         smach.StateMachine.add('GOTO_DUMP_LOCATION',
-                               GotoDumpingLocation(),
+                               smach_ros.SimpleActionState('move_base',
+                                                           robot_actions.msg.move_baseAction,
+                                                           goal=dumping_goal),
                                transitions={
-                                   'success': 'DUMP',
-                                   'fail': 'SELF_LOC'
+                                   'succeeded': 'MINE',
+                                   'aborted': 'SELF_LOC',
+                                   'preempted': 'SELF_LOC'
                                })
 
         smach.StateMachine.add('DUMP',
